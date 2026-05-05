@@ -349,7 +349,7 @@ export default function Survey() {
             </Card>
             {(answers.q1 === "regular" || answers.q1 === "sometimes") && (
               <Card>
-                <Q num={2} text="من المنصات التالية، أيها سمعت عنها أو تعرف باسمها؟ (اختر كل ما ينطبق)" />
+                <Q num={2} text="من المنصات التالية، أيها تعرفها أو سبق لك استخدامها؟ (اختر كل ما ينطبق)" />
                 <p style={{ fontSize: 12, color: "#0D9488", fontWeight: 600, margin: "0 0 8px" }}>المنصات السعودية والعربية</p>
                 <Checks values={answers.q3} options={PLATFORMS.local.map(p => ({ val: p.id, label: p.name }))} onChange={v => set("q3", v)} columns={2} />
                 <p style={{ fontSize: 12, color: "#0D9488", fontWeight: 600, margin: "16px 0 8px" }}>المنصات العالمية</p>
