@@ -2,7 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 
 // ⚠️ رابط Google Apps Script الخاص بك
 const GOOGLE_SCRIPT_URL =
-  "https://script.google.com/macros/s/AKfycbwKKR5iD3_HeBmTPhRz_g-PFJttHjWA8E_Y9CN5ouoCEGXTqJ5foZBNhUk8Rb4_slWbjQ/exec";
+  "https://script.google.com/macros/s/AKfycbwuLeiLmq7wOExeICTyalC5IJJXwWztlVqaUxWH91k66tna2-kledXe3wKW5cGvw1ciUQ/exec";
 
 const MAX_EVAL = 4;
 
