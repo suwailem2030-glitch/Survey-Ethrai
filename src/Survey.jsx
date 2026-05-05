@@ -1,10 +1,8 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 
 // ⚠️ رابط Google Apps Script الخاص بك
 const GOOGLE_SCRIPT_URL =
   "https://script.google.com/macros/s/AKfycbyCO5oEst4a_gBhSQKsjQBGlzWXWz3_pVZv8UXtODRmSk_m7QrHN5HajHG4wgcLdOIxxA/exec";
-
-const MAX_EVAL = 4;
 
 const PLATFORMS = {
   local: [
@@ -52,7 +50,7 @@ const DECISION_FACTORS = [
   "قوة الشهادة واعتراف سوق العمل بها",
   "السعر أو المجانية",
   "سمعة المنصة وموثوقيتها",
-  "توصية من شخص أثق فيه",
+  "الاستفادة الفعلية من المحتوى",
   "متطلبات الترقية أو التطوير الوظيفي",
   "أسباب أخرى",
 ];
@@ -60,7 +58,7 @@ const DECISION_FACTORS = [
 export default function Survey() {
   const [section, setSection] = useState(0);
   const [answers, setAnswers] = useState({
-    q1: null, q3: [], q5: {}, evalPicks: [], q6: {},
+    q1: null, q3: [], q5: {}, q6: {},
     maxMonthly: null, q16: null,
     q9: null, q10: null, q18: null,
   });
@@ -75,16 +73,11 @@ export default function Survey() {
     ...p, [k]: { ...p[k], [sk]: { ...(p[k]?.[sk] || {}), [f]: v } },
   })), []);
 
+  // كل المنصات المعروفة تتقيّم — بدون حد أقصى
   const knownPlatforms = useMemo(() => ALL_PLATFORMS.filter(p => answers.q3.includes(p.id)), [answers.q3]);
-  const needsPicker = knownPlatforms.length > MAX_EVAL;
 
-  const evalPlatforms = useMemo(() => {
-    if (!needsPicker) return knownPlatforms;
-    return knownPlatforms.filter(p => answers.evalPicks.includes(p.id));
-  }, [knownPlatforms, answers.evalPicks, needsPicker]);
-
-  const evalUsed = useMemo(() => evalPlatforms.filter(p => { const t = answers.q5[p.id]; return t === "tried" || t === "regular"; }), [evalPlatforms, answers.q5]);
-  const evalHeard = useMemo(() => evalPlatforms.filter(p => answers.q5[p.id] === "heard"), [evalPlatforms, answers.q5]);
+  const evalUsed = useMemo(() => knownPlatforms.filter(p => { const t = answers.q5[p.id]; return t === "tried" || t === "regular"; }), [knownPlatforms, answers.q5]);
+  const evalHeard = useMemo(() => knownPlatforms.filter(p => answers.q5[p.id] === "heard"), [knownPlatforms, answers.q5]);
   const allEval = useMemo(() => [...evalHeard, ...evalUsed], [evalHeard, evalUsed]);
   const cur = allEval[evalIndex];
 
@@ -110,9 +103,7 @@ export default function Survey() {
         return answers.q1 !== null && answers.q3.length > 0;
       }
       case 2: {
-        if (!knownPlatforms.every(p => answers.q5[p.id])) return false;
-        if (needsPicker && answers.evalPicks.length < MAX_EVAL) return false;
-        return true;
+        return knownPlatforms.every(p => answers.q5[p.id]);
       }
       case 3: {
         if (!cur) return true;
@@ -175,15 +166,6 @@ export default function Survey() {
   const handlePrev = () => {
     if (section === 3 && evalIndex > 0) { setEvalIndex(evalIndex - 1); return; }
     setSection(s => Math.max(s - 1, 0));
-  };
-
-  const toggleEvalPick = (id) => {
-    const picks = answers.evalPicks;
-    if (picks.includes(id)) {
-      set("evalPicks", picks.filter(x => x !== id));
-    } else if (picks.length < MAX_EVAL) {
-      set("evalPicks", [...picks, id]);
-    }
   };
 
   /* ═══ مكونات ═══ */
@@ -261,10 +243,10 @@ export default function Survey() {
     <div style={{ background: "#fff", borderRadius: 14, padding: "22px 20px", border: "1px solid #F3F4F6", marginBottom: 16, ...style }}>{children}</div>
   );
 
-  const LikertQ = ({ label, color, borderColor, statement, value, onChange }) => (
+  // مكون التقييم — بدون عناوين تقنية
+  const LikertQ = ({ borderColor, statement, value, onChange }) => (
     <Card style={{ borderRight: `4px solid ${borderColor}` }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color, marginBottom: 12 }}>{label}</div>
-      <p style={{ fontSize: 14, color: "#374151", margin: "0 0 14px", lineHeight: 1.7 }}>{statement}</p>
+      <p style={{ fontSize: 14, color: "#374151", margin: "0 0 14px", lineHeight: 1.7, fontWeight: 600 }}>{statement}</p>
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         {LIKERT_5.map(l => (
           <button key={l.val} onClick={() => onChange(l.val)} style={{
@@ -285,6 +267,30 @@ export default function Survey() {
       </div>
     </Card>
   );
+
+  // مكون الملاحظات — يحفظ عند مغادرة الحقل بدل كل حرف (يحل مشكلة الجوال)
+  const NoteBox = ({ pid, cur, setDeep, initialValue }) => {
+    const ref = useRef(null);
+    return (
+      <Card style={{ background: "#FAFAFA" }}>
+        <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 8px" }}>
+          ما الشيء الذي تتمنى تحسينه في {cur.name}؟ <span style={{ color: "#9CA3AF" }}>(اختياري)</span>
+        </p>
+        <textarea
+          ref={ref}
+          defaultValue={initialValue || ""}
+          onBlur={e => setDeep("q6", pid, "note", e.target.value)}
+          placeholder="اكتب ملاحظتك هنا..."
+          style={{
+            width: "100%", padding: 12, borderRadius: 10, fontSize: 14,
+            border: "1.5px solid #E5E7EB", fontFamily: "inherit", resize: "vertical",
+            minHeight: 70, direction: "rtl", outline: "none", boxSizing: "border-box",
+            WebkitAppearance: "none",
+          }}
+        />
+      </Card>
+    );
+  };
 
   if (disqualified) {
     return (
@@ -362,7 +368,6 @@ export default function Survey() {
           { val: "tried", label: "جربت قليلاً", color: "#0369A1", bg: "#EFF6FF" },
           { val: "regular", label: "بانتظام", color: "#7C3AED", bg: "#F5F3FF" },
         ];
-        const allSet = knownPlatforms.every(p => answers.q5[p.id]);
         return (
           <>
             <Header icon="📊" title="عمق الاستخدام" subtitle="اضغط على الخانة المناسبة لكل منصة" />
@@ -400,58 +405,6 @@ export default function Survey() {
                 </div>
               ))}
             </Card>
-
-            {allSet && needsPicker && (
-              <Card style={{ borderRight: "4px solid #D97706", background: "#FFFBEB" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                  <span style={{ fontSize: 20 }}>⚡</span>
-                  <div>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: "#92400E", margin: 0 }}>
-                      اخترت {knownPlatforms.length} منصات — حدد {MAX_EVAL} للتقييم
-                    </p>
-                    <p style={{ fontSize: 12, color: "#A16207", margin: "2px 0 0", lineHeight: 1.5 }}>
-                      عشان ما نطوّل عليك، اختر أهم {MAX_EVAL} منصات تبي تقيّمها بالتفصيل
-                    </p>
-                  </div>
-                </div>
-                <div style={{
-                  display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                  padding: "6px 12px", borderRadius: 8, marginBottom: 12,
-                  background: answers.evalPicks.length >= MAX_EVAL ? "#D1FAE5" : "#FEF3C7",
-                }}>
-                  <span style={{ fontSize: 18, fontWeight: 800, color: answers.evalPicks.length >= MAX_EVAL ? "#059669" : "#D97706" }}>
-                    {answers.evalPicks.length}
-                  </span>
-                  <span style={{ fontSize: 12, color: "#6B7280" }}>من {MAX_EVAL}</span>
-                  {answers.evalPicks.length >= MAX_EVAL && <span style={{ fontSize: 11, color: "#059669", fontWeight: 600 }}>✓ جاهز</span>}
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {knownPlatforms.map(p => {
-                    const ch = answers.evalPicks.includes(p.id);
-                    const mx = answers.evalPicks.length >= MAX_EVAL && !ch;
-                    return (
-                      <button key={p.id} onClick={() => toggleEvalPick(p.id)} style={{
-                        display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 10,
-                        border: ch ? "2px solid #0D9488" : "1.5px solid #E5E7EB",
-                        background: ch ? "#F0FDFA" : mx ? "#F9FAFB" : "#fff",
-                        cursor: mx ? "not-allowed" : "pointer", opacity: mx ? 0.45 : 1,
-                        fontFamily: "inherit", fontSize: 14,
-                      }}>
-                        <div style={{
-                          width: 20, height: 20, borderRadius: 5, border: ch ? "none" : "2px solid #CBD5E1",
-                          background: ch ? "#0D9488" : "#fff", display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: 12, color: "#fff", fontWeight: 700, flexShrink: 0,
-                        }}>{ch ? "✓" : ""}</div>
-                        <span style={{ color: "#1F2937", flex: 1 }}>{p.name}</span>
-                        <span style={{ fontSize: 11, color: "#9CA3AF" }}>
-                          {answers.q5[p.id] === "heard" ? "سمعت" : answers.q5[p.id] === "tried" ? "جربت" : "بانتظام"}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </Card>
-            )}
           </>
         );
       }
@@ -493,10 +446,10 @@ export default function Survey() {
               </Card>
             ) : (
               <>
-                <LikertQ label="القيمة المضافة المُدركة" color="#059669" borderColor="#059669"
+                <LikertQ borderColor="#059669"
                   statement={`محتوى منصة ${cur.name} عالي الجودة`}
                   value={d.value} onChange={v => setDeep("q6", pid, "value", v)} />
-                <LikertQ label="تقييم التكلفة" color="#6366F1" borderColor="#6366F1"
+                <LikertQ borderColor="#6366F1"
                   statement={`السعر قد يمنعني من الاشتراك أو الدفع في ${cur.name}`}
                   value={d.price} onChange={v => setDeep("q6", pid, "price", v)} />
                 {pid === "ithraa" && (
@@ -509,17 +462,7 @@ export default function Survey() {
                     />
                   </Card>
                 )}
-                <Card style={{ background: "#FAFAFA" }}>
-                  <p style={{ fontSize: 13, color: "#6B7280", margin: "0 0 8px" }}>
-                    ما الشيء الذي تتمنى تحسينه في {cur.name}؟ <span style={{ color: "#9CA3AF" }}>(اختياري)</span>
-                  </p>
-                  <textarea value={d.note || ""} onChange={e => setDeep("q6", pid, "note", e.target.value)}
-                    placeholder="اكتب ملاحظتك هنا..." style={{
-                      width: "100%", padding: 12, borderRadius: 10, fontSize: 13.5,
-                      border: "1.5px solid #E5E7EB", fontFamily: "inherit", resize: "vertical",
-                      minHeight: 60, direction: "rtl", outline: "none", boxSizing: "border-box",
-                    }} />
-                </Card>
+                <NoteBox pid={pid} cur={cur} setDeep={setDeep} initialValue={d.note} />
               </>
             )}
           </>
